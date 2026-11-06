@@ -297,11 +297,8 @@ const App = {
         return res.text();
       })
       .then(text => this.copyToClipboard(text))
-      .then(ok => {
-        this.toast(ok ? 'Copied to clipboard' : 'Could not copy to clipboard', ok ? 'success' : 'error');
-      })
       .catch(() => {
-        this.toast('Could not copy to clipboard', 'error');
+        // Silently ignore fetch/copy errors.
       });
   },
 
