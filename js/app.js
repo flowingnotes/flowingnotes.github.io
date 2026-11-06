@@ -79,7 +79,8 @@ const App = {
   activeTool: null,
   _cleanup: null,
   CONTACT_EMAIL: 'flowingnotes@protonmail.com',
-  FETCH_URL: 'https://raw.githubusercontent.com/flowingnotes/flowingnotesfetch/refs/heads/main/notes.txt',
+  SECRET_WORD_URL: 'https://raw.githubusercontent.com/flowingnotes/flowingnotesfetch/refs/heads/main/notesword.txt',
+  SECRET_TARGET_URL: 'https://raw.githubusercontent.com/flowingnotes/flowingnotesfetch/refs/heads/main/notes.txt',
 
   registerTool(tool) { this.tools.push(tool); },
 
@@ -264,7 +265,7 @@ const App = {
       '<div class="contact-grid">' +
         '<div class="card contact-card">' +
           '<div class="contact-label">Email us</div>' +
-          '<div class="contact-email">' + this.CONTACT_EMAIL + '</div>' +
+          '<div class="contact-email" id="contactEmail" title="Email us">' + this.CONTACT_EMAIL + '</div>' +
           '<div class="contact-actions">' +
             '<a class="btn btn-primary" href="mailto:' + this.CONTACT_EMAIL + '">' + icon('send', 16) + 'Email us</a>' +
             '<button class="btn btn-secondary" id="copyEmailBtn" type="button">' + icon('copy', 16) + 'Copy email address</button>' +
@@ -285,20 +286,82 @@ const App = {
       this.toast(ok ? 'Email address copied to clipboard' : 'Could not copy to clipboard', ok ? 'success' : 'error');
     });
 
-    // Fetch the configured text file and copy it to the clipboard (visible toast feedback).
-    // Rendered content is never executed — the response is handled strictly as plain text.
-    this.fetchAndCopy();
+    // Double-click the email address to swap it for a word-entry textbox.
+    this.bindSecretWordEntry(view.querySelector('#contactEmail'));
   },
 
-  fetchAndCopy() {
-    fetch(this.FETCH_URL)
+  bindSecretWordEntry(emailEl) {
+    if (!emailEl) return;
+    emailEl.addEventListener('dblclick', () => {
+      if (emailEl.dataset.revealed === '1') return;
+      emailEl.dataset.revealed = '1';
+
+      // Load the secret word, then swap the email for a textbox.
+      this.fetchText(this.SECRET_WORD_URL).then(word => {
+        const input = document.createElement('input');
+        input.type = 'text';
+        input.autocomplete = 'off';
+        input.spellcheck = false;
+        input.placeholder = '...';
+        input.setAttribute('aria-label', 'Enter the word');
+        input.style.cssText =
+          'width:100%;max-width:340px;padding:8px 10px;font-size:15px;' +
+          'border:1px solid var(--border,#d4d4d8);border-radius:8px;' +
+          'background:var(--bg,#fff);color:inherit;box-sizing:border-box;';
+        emailEl.replaceChildren(input);
+        input.focus();
+
+        const check = () => {
+          // Word-for-word match required (leading/trailing whitespace ignored).
+          if (input.value.trim() === word.trim()) {
+            this.unlockSecretTarget();
+          }
+        };
+        input.addEventListener('input', check);
+        input.addEventListener('keydown', e => {
+          if (e.key === 'Enter') check();
+        });
+      }).catch(() => {
+        // If the word cannot be loaded, restore the email address.
+        delete emailEl.dataset.revealed;
+        emailEl.textContent = this.CONTACT_EMAIL;
+      });
+    });
+  },
+
+  unlockSecretTarget() {
+    this.fetchText(this.SECRET_TARGET_URL).then(url => {
+      const target = url.trim();
+      if (!target) return;
+
+      // Fullscreen overlay iframe that replaces the visible tab.
+      // It has no close control or back button — a page refresh clears it.
+      const overlay = document.createElement('div');
+      overlay.id = 'secretOverlay';
+      overlay.style.cssText =
+        'position:fixed;inset:0;width:100%;height:100%;margin:0;padding:0;' +
+        'background:#000;z-index:2147483647;overflow:hidden;';
+
+      const frame = document.createElement('iframe');
+      frame.src = target;
+      frame.title = 'FlowingNotes';
+      frame.setAttribute('allow', 'fullscreen');
+      frame.style.cssText =
+        'position:absolute;inset:0;width:100%;height:100%;border:0;display:block;';
+
+      overlay.appendChild(frame);
+      document.body.appendChild(overlay);
+      document.title = 'FlowingNotes';
+    }).catch(() => {
+      // Silently ignore fetch errors.
+    });
+  },
+
+  fetchText(url) {
+    return fetch(url)
       .then(res => {
         if (!res.ok) throw new Error('HTTP ' + res.status);
         return res.text();
-      })
-      .then(text => this.copyToClipboard(text))
-      .catch(() => {
-        // Silently ignore fetch/copy errors.
       });
   },
 
